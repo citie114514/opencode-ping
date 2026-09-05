@@ -363,6 +363,17 @@ def main():
             print(f"[DEBUG] Running ITDOG ping to {host}", file=sys.stderr)
         report.remote_nodes = run_remote_ping(host, args.count, args.timeout)
         if report.remote_nodes:
+            # Check if we got fewer nodes than expected
+            first_node_raw = report.remote_nodes[0].raw if report.remote_nodes else {}
+            expected_total = first_node_raw.get("expected_total", 0)
+            actual_count = len(report.remote_nodes)
+            
+            if expected_total > actual_count:
+                report.errors.append(
+                    f"ITDOG返回了{actual_count}个节点，但预期有{expected_total}个。"
+                    f"ITDOG使用WebSocket动态加载数据，Python requests无法获取完整结果。"
+                )
+            
             report.regions = aggregate_regions(report.remote_nodes)
             report.summary = build_summary(report.remote_nodes, report.local_ping)
 

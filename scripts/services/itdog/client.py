@@ -1,6 +1,8 @@
 """
-ITDOG ping client.
-Uses HTML parsing to get results from ITDOG's ping page.
+ITDOG ping service adapter.
+Note: ITDOG uses WebSocket to push results dynamically.
+Python requests can only parse the initial HTML which may have limited data.
+For full results, use a browser-based approach.
 """
 
 import re
@@ -23,10 +25,6 @@ class ITDOGError(Exception):
     pass
 
 
-class CaptchaRequired(ITDOGError):
-    pass
-
-
 def _session() -> requests.Session:
     s = requests.Session()
     s.headers.update({
@@ -35,6 +33,17 @@ def _session() -> requests.Session:
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
     })
     return s
+
+
+def _parse_latency(text: str) -> Optional[float]:
+    """Parse latency value from text like '84ms' or '超时'."""
+    if not text or text in ("超时", "--", ""):
+        return None
+    text = text.replace("ms", "").strip()
+    try:
+        return float(text)
+    except ValueError:
+        return None
 
 
 def _parse_node_row(row, target: str) -> Optional[PingNode]:
@@ -48,12 +57,12 @@ def _parse_node_row(row, target: str) -> Optional[PingNode]:
                 node_id = None
 
         cells = row.find_all("td")
-        if len(cells) < 9:
+        if len(cells) < 4:
             return None
 
         node = PingNode(node_id=node_id, target=target, raw={})
 
-        # Cell 0: location (e.g., "电信 辽宁大连")
+        # Cell 0: location (e.g., "电信 湖北十堰")
         loc_text = cells[0].get_text(strip=True)
         node.node_name = loc_text
         node.province = extract_province(loc_text)
@@ -64,74 +73,27 @@ def _parse_node_row(row, target: str) -> Optional[PingNode]:
         # Cell 1: response IP
         node.resolved_ip = cells[1].get_text(strip=True)
 
-        # Cell 2: IP geo location
+        # Cell 2: IP geo/location
         ip_geo = cells[2].get_text(strip=True)
 
-        # Cell 3: loss percentage
-        loss_text = cells[3].get_text(strip=True)
-        if loss_text not in ("--", ""):
-            try:
-                node.loss_percent = float(loss_text.replace("%", ""))
-            except ValueError:
-                pass
+        # Cell 3: latency
+        latency_text = cells[3].get_text(strip=True)
+        node.latest_ms = _parse_latency(latency_text)
 
-        # Cell 4: sent count
-        sent_text = cells[4].get_text(strip=True)
-        if sent_text not in ("--", ""):
-            try:
-                node.sent = int(sent_text)
-            except ValueError:
-                pass
-
-        # Cell 5: latest latency
-        last_text = cells[5].get_text(strip=True)
-        if last_text in ("超时", "--", ""):
+        # Determine status
+        if node.latest_ms is None:
             node.status = NodeStatus.TIMEOUT.value
         else:
-            try:
-                node.latest_ms = float(last_text)
-                node.status = NodeStatus.SUCCESS.value
-            except ValueError:
-                node.status = NodeStatus.ERROR.value
-                node.error = f"Unparseable latency: {last_text}"
+            node.status = NodeStatus.SUCCESS.value
+            node.sent = 1
+            node.received = 1
+            node.loss_percent = 0.0
 
-        # Cell 6: best latency
-        best_text = cells[6].get_text(strip=True)
-        if best_text not in ("--", ""):
-            try:
-                node.min_ms = float(best_text)
-            except ValueError:
-                pass
-
-        # Cell 7: worst latency
-        worst_text = cells[7].get_text(strip=True)
-        if worst_text not in ("--", ""):
-            try:
-                node.max_ms = float(worst_text)
-            except ValueError:
-                pass
-
-        # Cell 8: average latency
-        avg_text = cells[8].get_text(strip=True)
-        if avg_text not in ("--", ""):
-            try:
-                node.avg_ms = float(avg_text)
-            except ValueError:
-                pass
-
-        # Calculate received from sent and loss
-        if node.sent > 0:
-            if node.loss_percent >= 100:
-                node.received = 0
-            else:
-                node.received = int(node.sent * (1 - node.loss_percent / 100))
-
-        # Update status based on loss
-        if node.status == NodeStatus.SUCCESS.value and node.loss_percent > 0:
-            if node.loss_percent >= 100:
-                node.status = NodeStatus.TIMEOUT.value
-            else:
-                node.status = NodeStatus.PARTIAL_LOSS.value
+        node.raw = {
+            "location": loc_text,
+            "ip_geo": ip_geo,
+            "latency_text": latency_text,
+        }
 
         return node
     except (IndexError, ValueError):
@@ -142,30 +104,19 @@ def ping(host: str, count: int = 10, timeout: int = 60) -> List[PingNode]:
     """
     Ping a host using ITDOG service.
     
+    Note: ITDOG dynamically loads data via WebSocket.
+    This function parses the initial HTML response which may contain
+    limited or cached data. For complete results, use a browser-based approach.
+    
     Args:
         host: Target hostname or IP
         count: Not used (kept for interface consistency)
         timeout: Not used (kept for interface consistency)
     
     Returns:
-        List of PingNode objects
+        List of PingNode objects (may be incomplete)
     """
     session = _session()
-
-    # Check captcha first
-    try:
-        resp = session.get(
-            f"{ITDOG_BASE}/verify/clicaptcha.php",
-            params={"type": "ajax"},
-            timeout=10,
-        )
-        data = resp.json()
-        if data.get("type") == "verify":
-            raise CaptchaRequired("CAPTCHA required by ITDOG")
-        if data.get("type") == "error":
-            raise ITDOGError(f"ITDOG error: {data.get('message', 'unknown')}")
-    except (ValueError, KeyError):
-        pass
 
     # Fetch the ping results page
     url = f"{ITDOG_BASE}/ping/{host}"
@@ -175,6 +126,20 @@ def ping(host: str, count: int = 10, timeout: int = 60) -> List[PingNode]:
     soup = BeautifulSoup(resp.text, "lxml")
     nodes = []
 
+    # Try to find total node count from JavaScript variables
+    total_nodes = 0
+    timeout_nodes = 0
+    
+    scripts = soup.find_all("script")
+    for script in scripts:
+        text = script.string or ""
+        m = re.search(r"check_node_num\s*=\s*(\d+)", text)
+        if m:
+            total_nodes = int(m.group(1))
+        m = re.search(r"time_out_num\s*=\s*(\d+)", text)
+        if m:
+            timeout_nodes = int(m.group(1))
+
     # Find the results table
     table = soup.find("table", {"id": "simpletable"})
     if not table:
@@ -182,19 +147,21 @@ def ping(host: str, count: int = 10, timeout: int = 60) -> List[PingNode]:
 
     # Parse all node rows
     rows = table.find_all("tr", class_="node_tr")
+    
+    # If no node_tr rows found, try all tr rows
+    if not rows:
+        rows = table.find_all("tr")
+
     for row in rows:
         node = _parse_node_row(row, host)
         if node:
             nodes.append(node)
 
-    # If no node_tr rows found, try all tr rows
-    if not rows:
-        all_rows = table.find_all("tr")
-        for row in all_rows:
-            cells = row.find_all("td")
-            if len(cells) >= 9:
-                node = _parse_node_row(row, host)
-                if node:
-                    nodes.append(node)
+    # Add metadata note if we got fewer nodes than expected
+    if total_nodes > 0 and len(nodes) < total_nodes:
+        # Store the expected count in the first node's raw data
+        if nodes:
+            nodes[0].raw["expected_total"] = total_nodes
+            nodes[0].raw["actual_returned"] = len(nodes)
 
     return nodes
