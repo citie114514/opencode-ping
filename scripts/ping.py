@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Multi-mode network diagnostic tool.
 Supports local ICMP ping, ITDOG multi-location ping, TCP ping, and website speed test.
@@ -11,6 +12,12 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+
+# Set UTF-8 encoding for Windows console
+if sys.platform == "win32":
+    import io
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
 
 # Ensure scripts dir is in path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -144,10 +151,15 @@ def print_report(report: PingReport, show_all: bool = False,
                  show_timeouts: bool = False, show_loss: bool = False):
     """Print formatted text report."""
     W = 60
+    LINE = "=" * W
 
     print()
     print(f"  / ping {report.target}")
-    print(f"{'━' * W}")
+    print(f"  {LINE}")
+    print()
+    print(f"  网络诊断")
+    print(f"  {LINE}")
+    print()
 
     # ── Local Ping ──
     if report.local_ping:
@@ -156,14 +168,14 @@ def print_report(report: PingReport, show_all: bool = False,
         if lp.error:
             print(f"    错误: {lp.error}")
         else:
-            print(f"    {lp.sent} 发 / {lp.received} 收  丢包: {format_loss(lp.loss_percent)}")
+            print(f"    {lp.sent} 发 / {lp.received} 收")
+            print(f"    丢包: {format_loss(lp.loss_percent)}")
             if lp.avg_ms is not None:
-                parts = [f"平均: {format_latency(lp.avg_ms)}"]
+                print(f"    平均: {format_latency(lp.avg_ms)}")
                 if lp.min_ms is not None:
-                    parts.append(f"最快: {format_latency(lp.min_ms)}")
+                    print(f"    最快: {format_latency(lp.min_ms)}")
                 if lp.max_ms is not None:
-                    parts.append(f"最慢: {format_latency(lp.max_ms)}")
-                print(f"    {' | '.join(parts)}")
+                    print(f"    最慢: {format_latency(lp.max_ms)}")
         print()
 
     # ── Remote Ping (ITDOG) ──
@@ -171,27 +183,26 @@ def print_report(report: PingReport, show_all: bool = False,
         s = report.summary
         print(f"  [ITDOG 多地点]")
         print(f"    监测点: {s['total']}")
-        print(f"    成功: {s['success']}  丢包节点: {s['partial_loss']}  超时: {s['timeout']}")
-        if s['unavailable'] > 0:
-            print(f"    不可用: {s['unavailable']}")
-        if s['avg_ms'] is not None:
-            print(f"    平均延迟: {format_latency(s['avg_ms'])}  最快: {format_latency(s['min_ms'])}  最慢: {format_latency(s['max_ms'])}")
-        print(f"    整体丢包: {format_loss(s['overall_loss_percent'])} ({s['total_received']}/{s['total_sent']})")
+        print(f"    成功: {s['success']}")
+        print(f"    丢包节点: {s['partial_loss']}")
+        print(f"    超时: {s['timeout']}")
         print()
 
         # Region table
-        print(f"    {'区域':<8} {'节点':>6} {'成功':>6} {'丢包':>6} {'超时':>6} {'平均延迟':>10}")
-        print(f"    {'─'*52}")
+        print(f"    区域")
         for rname, rd in report.regions.items():
             if rd["total"] == 0:
                 continue
             avg_str = format_latency(rd["avg_ms"]) if rd["avg_ms"] is not None else "-"
-            warn = ""
-            if rd["timeout"] > 0:
-                warn = " [T]"
-            elif rd["loss"] > 0:
-                warn = " [L]"
-            print(f"    {rname:<8} {rd['total']:>6} {rd['success']:>6} {rd['loss']:>6} {rd['timeout']:>6} {avg_str:>10}{warn}")
+            loss_str = f"丢包 {rd['loss']}" if rd['loss'] > 0 else ""
+            timeout_str = f"超时 {rd['timeout']}" if rd['timeout'] > 0 else ""
+            extras = []
+            if loss_str:
+                extras.append(loss_str)
+            if timeout_str:
+                extras.append(timeout_str)
+            extra_str = "   " + "   ".join(extras) if extras else ""
+            print(f"    {rname:<8}{rd['total']:>4} 节点   平均 {avg_str:<8}{extra_str}")
         print()
 
         # Abnormal nodes
@@ -200,7 +211,7 @@ def print_report(report: PingReport, show_all: bool = False,
                                     NodeStatus.UNAVAILABLE.value, NodeStatus.ERROR.value)
                     or (n.latest_ms is not None and n.latest_ms >= 100)]
         if abnormal:
-            print(f"    异常节点:")
+            print(f"    异常节点")
             for n in abnormal:
                 label = status_emoji(n.status)
                 if n.latest_ms is not None and n.latest_ms >= 200:
@@ -247,7 +258,7 @@ def print_report(report: PingReport, show_all: bool = False,
         tp = report.tcp_ping
         print(f"  [TCP {tp.port}]")
         if tp.success:
-            print(f"    连接成功: {format_latency(tp.avg_ms)}  (尝试 {tp.attempts} 次, 成功 {tp.successes} 次)")
+            print(f"    连接成功: {format_latency(tp.avg_ms)}")
             if tp.min_ms is not None:
                 print(f"    最快: {format_latency(tp.min_ms)}  最慢: {format_latency(tp.max_ms)}")
         else:
@@ -261,12 +272,13 @@ def print_report(report: PingReport, show_all: bool = False,
         if wt.error:
             print(f"    错误: {wt.error}")
         else:
-            print(f"    HTTP {wt.status_code} {wt.statusText}")
+            print(f"    HTTP: {wt.status_code} {wt.statusText}")
             if wt.ttfb_ms is not None:
-                print(f"    TTFB: {format_latency(wt.ttfb_ms)}  总耗时: {format_latency(wt.total_ms)}")
+                print(f"    TTFB: {format_latency(wt.ttfb_ms)}")
+                print(f"    总耗时: {format_latency(wt.total_ms)}")
             if wt.response_size is not None:
                 size_str = _format_size(wt.response_size)
-                print(f"    响应大小: {size_str}  Content-Type: {wt.content_type}")
+                print(f"    响应大小: {size_str}")
             if wt.redirect_count > 0:
                 print(f"    重定向: {wt.redirect_count} 次")
         print()
@@ -378,7 +390,11 @@ def main():
 
     # Output
     if args.output == "json":
-        print(json.dumps(report.to_dict(), indent=2, ensure_ascii=False, default=str))
+        output = report.to_dict()
+        # Remove or sanitize raw_output for JSON
+        if output.get("local_ping") and output["local_ping"].get("raw_output"):
+            output["local_ping"]["raw_output"] = output["local_ping"]["raw_output"][:500]
+        print(json.dumps(output, indent=2, ensure_ascii=False, default=str))
     else:
         print_report(report, show_all=args.show_all,
                      show_timeouts=args.show_timeouts,
