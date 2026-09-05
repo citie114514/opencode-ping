@@ -71,11 +71,13 @@ python3 "${SKILL_DIR}/scripts/ping.py" "<host>" [options]
 
 ## ITDOG data flow
 
-1. GET `https://www.itdog.cn/ping/{host}` to fetch the results page
-2. Parse the HTML table (`<table id="simpletable">`) to extract all monitoring points
-3. Each row (`<tr class="node_tr">`) contains: location, response IP, loss%, sent count, latency stats
-4. All nodes are collected — no truncation, no artificial limits
-5. No WebSocket or JavaScript execution required
+1. Use Playwright headless browser to navigate to `https://www.itdog.cn/ping/{host}`
+2. Wait for JavaScript to fully load all monitoring point results (up to 294 nodes)
+3. Parse the HTML table (`<table id="simpletable">`) to extract all node data
+4. Extract metadata from JavaScript variables (`check_node_num`, `time_out_num`)
+5. Return complete results — no truncation, no artificial limits
+
+**Note:** Playwright is used only for ITDOG data fetching. Local ICMP ping, TCP ping, and web tests do not require Playwright.
 
 ## Region classification
 
@@ -99,14 +101,18 @@ python3 "${SKILL_DIR}/scripts/ping.py" "<host>" [options]
 
 ## Dependencies
 
-```
-requests
-beautifulsoup4
-lxml
-websocket-client
-```
+- Python 3.8+
+- `requests` library
+- `beautifulsoup4` library
+- `lxml` for faster parsing
+- `playwright` for headless browser (required for ITDOG)
+- `websocket-client` (optional)
 
-Install: `pip install requests beautifulsoup4 lxml websocket-client`
+Install dependencies:
+```bash
+pip install requests beautifulsoup4 lxml playwright websocket-client
+playwright install chromium
+```
 
 ## Security
 
@@ -115,3 +121,4 @@ Install: `pip install requests beautifulsoup4 lxml websocket-client`
 - No SSH, no command execution on remote hosts
 - No port scanning (single port only)
 - No CAPTCHA bypass — reports and falls back
+- Playwright runs in headless mode only for ITDOG data fetching

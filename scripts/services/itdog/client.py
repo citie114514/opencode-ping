@@ -1,16 +1,11 @@
 """
-ITDOG ping service adapter.
-Note: ITDOG uses WebSocket to push results dynamically.
-Python requests can only parse the initial HTML which may have limited data.
-For full results, use a browser-based approach.
+ITDOG ping service adapter using Playwright headless browser.
 """
 
 import re
-import time
 from typing import List, Optional
 
-import requests
-from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
 
 import sys
 import os
@@ -19,20 +14,11 @@ from utils import PingNode, NodeStatus, classify_region, extract_province, extra
 
 
 ITDOG_BASE = "https://www.itdog.cn"
+DEFAULT_TIMEOUT = 60  # seconds
 
 
 class ITDOGError(Exception):
     pass
-
-
-def _session() -> requests.Session:
-    s = requests.Session()
-    s.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-    })
-    return s
 
 
 def _parse_latency(text: str) -> Optional[float]:
@@ -44,7 +30,7 @@ def _parse_latency(text: str) -> Optional[float]:
     # Handle "<1ms" format
     if text.startswith("<"):
         try:
-            return float(text[1:].replace("ms", "")) * 0.1  # Return 0.1 for <1ms
+            return float(text[1:].replace("ms", "")) * 0.1
         except ValueError:
             return 0.1
     
@@ -56,122 +42,168 @@ def _parse_latency(text: str) -> Optional[float]:
         return None
 
 
-def _parse_node_row(row, target: str) -> Optional[PingNode]:
-    """Parse a single node row from the HTML table."""
-    try:
-        node_id = row.get("node")
-        if node_id:
-            try:
-                node_id = int(node_id)
-            except ValueError:
-                node_id = None
-
-        cells = row.find_all("td")
-        if len(cells) < 4:
-            return None
-
-        node = PingNode(node_id=node_id, target=target, raw={})
-
-        # Cell 0: location (e.g., "电信 湖北十堰")
-        loc_text = cells[0].get_text(strip=True)
-        node.node_name = loc_text
-        node.province = extract_province(loc_text)
-        node.isp = extract_isp(loc_text)
-        node.region = classify_region(loc_text)
-        node.city = loc_text
-
-        # Cell 1: response IP
-        node.resolved_ip = cells[1].get_text(strip=True)
-
-        # Cell 2: IP geo/location
-        ip_geo = cells[2].get_text(strip=True)
-
-        # Cell 3: latency
-        latency_text = cells[3].get_text(strip=True)
-        node.latest_ms = _parse_latency(latency_text)
-
-        # Determine status
-        if node.latest_ms is None:
-            node.status = NodeStatus.TIMEOUT.value
-        else:
-            node.status = NodeStatus.SUCCESS.value
-            node.sent = 1
-            node.received = 1
-            node.loss_percent = 0.0
-
-        node.raw = {
-            "location": loc_text,
-            "ip_geo": ip_geo,
-            "latency_text": latency_text,
-        }
-
-        return node
-    except (IndexError, ValueError):
-        return None
-
-
-def ping(host: str, count: int = 10, timeout: int = 60) -> List[PingNode]:
+def ping(host: str, count: int = 10, timeout: int = DEFAULT_TIMEOUT) -> List[PingNode]:
     """
-    Ping a host using ITDOG service.
-    
-    Note: ITDOG dynamically loads data via WebSocket.
-    This function parses the initial HTML response which may contain
-    limited or cached data. For complete results, use a browser-based approach.
+    Ping a host using ITDOG service via Playwright headless browser.
     
     Args:
         host: Target hostname or IP
         count: Not used (kept for interface consistency)
-        timeout: Not used (kept for interface consistency)
+        timeout: Timeout in seconds (default: 60)
     
     Returns:
-        List of PingNode objects (may be incomplete)
+        List of PingNode objects
     """
-    session = _session()
-
-    # Fetch the ping results page
-    url = f"{ITDOG_BASE}/ping/{host}"
-    resp = session.get(url, timeout=30)
-    resp.raise_for_status()
-
-    soup = BeautifulSoup(resp.text, "lxml")
     nodes = []
-
-    # Try to find total node count from JavaScript variables
-    total_nodes = 0
-    timeout_nodes = 0
+    expected_total = 0
+    timeout_count = 0
     
-    scripts = soup.find_all("script")
-    for script in scripts:
-        text = script.string or ""
-        m = re.search(r"check_node_num\s*=\s*(\d+)", text)
-        if m:
-            total_nodes = int(m.group(1))
-        m = re.search(r"time_out_num\s*=\s*(\d+)", text)
-        if m:
-            timeout_nodes = int(m.group(1))
-
-    # Find the results table
-    table = soup.find("table", {"id": "simpletable"})
-    if not table:
-        raise ITDOGError("Could not find results table on ITDOG page")
-
-    # Parse all node rows
-    rows = table.find_all("tr", class_="node_tr")
+    timeout_ms = timeout * 1000
     
-    # If no node_tr rows found, try all tr rows
-    if not rows:
-        rows = table.find_all("tr")
-
-    for row in rows:
-        node = _parse_node_row(row, host)
-        if node:
-            nodes.append(node)
-
-    # Add metadata note if we got fewer nodes than expected
-    if total_nodes > 0 and len(nodes) < total_nodes:
-        # Store the expected count in the first node's raw data
-        if nodes:
-            nodes[0].raw["expected_total"] = total_nodes
-            nodes[0].raw["actual_returned"] = len(nodes)
-
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
+        page = context.new_page()
+        page.set_default_timeout(timeout_ms)
+        
+        try:
+            # Step 1: Navigate to main ping page
+            page.goto(f"{ITDOG_BASE}/ping/", wait_until="domcontentloaded")
+            page.wait_for_timeout(2000)
+            
+            # Step 2: Fill in the host
+            page.fill("#host", host)
+            page.wait_for_timeout(1000)
+            
+            # Step 3: Click the "单次测试" button
+            buttons = page.query_selector_all("button")
+            for btn in buttons:
+                text = btn.inner_text()
+                if "单次" in text or "测试" in text:
+                    btn.click()
+                    break
+            
+            # Step 4: Wait for results to load
+            page.wait_for_timeout(10000)
+            
+            # Step 5: Get metadata from JavaScript
+            expected_total = page.evaluate("() => window.check_node_num || 0")
+            timeout_count = page.evaluate("() => window.time_out_num || 0")
+            
+            # Step 6: Wait for table rows to appear
+            page.wait_for_selector("tr.node_tr", timeout=30000)
+            
+            # Step 7: Get all node rows
+            rows = page.query_selector_all("tr.node_tr")
+            
+            # Step 8: Parse each row
+            for row in rows:
+                try:
+                    node_id = row.get_attribute("node")
+                    if node_id:
+                        try:
+                            node_id = int(node_id)
+                        except ValueError:
+                            node_id = None
+                    
+                    cells = row.query_selector_all("td")
+                    if len(cells) < 4:
+                        continue
+                    
+                    loc_text = cells[0].inner_text().strip()
+                    ip_text = cells[1].inner_text().strip()
+                    geo_text = cells[2].inner_text().strip()
+                    latency_text = cells[3].inner_text().strip()
+                    
+                    node = PingNode(node_id=node_id, target=host, raw={})
+                    node.node_name = loc_text
+                    node.province = extract_province(loc_text)
+                    node.isp = extract_isp(loc_text)
+                    node.region = classify_region(loc_text)
+                    node.city = loc_text
+                    node.resolved_ip = ip_text
+                    node.raw = {
+                        "location": loc_text,
+                        "ip_geo": geo_text,
+                        "latency_text": latency_text,
+                    }
+                    
+                    node.latest_ms = _parse_latency(latency_text)
+                    
+                    if node.latest_ms is None:
+                        node.status = NodeStatus.TIMEOUT.value
+                    else:
+                        node.status = NodeStatus.SUCCESS.value
+                        node.sent = 1
+                        node.received = 1
+                        node.loss_percent = 0.0
+                    
+                    nodes.append(node)
+                except Exception:
+                    continue
+            
+            # If we got fewer nodes than expected, wait a bit more
+            if len(nodes) < expected_total:
+                page.wait_for_timeout(5000)
+                rows = page.query_selector_all("tr.node_tr")
+                current_ids = {n.node_id for n in nodes if n.node_id}
+                for row in rows:
+                    try:
+                        node_id = row.get_attribute("node")
+                        if node_id and node_id not in current_ids:
+                            try:
+                                node_id = int(node_id)
+                            except ValueError:
+                                continue
+                            
+                            cells = row.query_selector_all("td")
+                            if len(cells) < 4:
+                                continue
+                            
+                            loc_text = cells[0].inner_text().strip()
+                            ip_text = cells[1].inner_text().strip()
+                            geo_text = cells[2].inner_text().strip()
+                            latency_text = cells[3].inner_text().strip()
+                            
+                            node = PingNode(node_id=node_id, target=host, raw={})
+                            node.node_name = loc_text
+                            node.province = extract_province(loc_text)
+                            node.isp = extract_isp(loc_text)
+                            node.region = classify_region(loc_text)
+                            node.city = loc_text
+                            node.resolved_ip = ip_text
+                            node.raw = {
+                                "location": loc_text,
+                                "ip_geo": geo_text,
+                                "latency_text": latency_text,
+                            }
+                            
+                            node.latest_ms = _parse_latency(latency_text)
+                            
+                            if node.latest_ms is None:
+                                node.status = NodeStatus.TIMEOUT.value
+                            else:
+                                node.status = NodeStatus.SUCCESS.value
+                                node.sent = 1
+                                node.received = 1
+                                node.loss_percent = 0.0
+                            
+                            nodes.append(node)
+                            current_ids.add(node_id)
+                    except Exception:
+                        continue
+                        
+        except Exception as e:
+            raise ITDOGError(f"ITDOG request failed: {e}")
+        finally:
+            browser.close()
+    
+    # Store metadata
+    if nodes:
+        nodes[0].raw["expected_total"] = expected_total
+        nodes[0].raw["actual_returned"] = len(nodes)
+        nodes[0].raw["timeout_count"] = timeout_count
+    
     return nodes

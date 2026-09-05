@@ -113,11 +113,13 @@ options:
 
 ## How ITDOG Works
 
-1. GET request to `https://www.itdog.cn/ping/{host}` fetches the results page
-2. The HTML page contains a `<table id="simpletable">` with all monitoring point results
-3. Each `<tr class="node_tr">` row contains: location, response IP, loss%, sent count, and latency stats
-4. All nodes are parsed and returned — no truncation, no artificial limits
-5. No WebSocket or JavaScript execution required for result collection
+1. Uses Playwright headless browser to navigate to `https://www.itdog.cn/ping/{host}`
+2. Waits for JavaScript to fully load all monitoring point results (up to 294 nodes)
+3. Parses the HTML table (`<table id="simpletable">`) to extract all node data
+4. Extracts metadata from JavaScript variables (`check_node_num`, `time_out_num`)
+5. Returns complete results — no truncation, no artificial limits
+
+**Note:** Playwright is used only for ITDOG data fetching. Local ICMP ping, TCP ping, and web tests do not require Playwright.
 
 ## Region Classification
 
