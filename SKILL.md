@@ -1,100 +1,117 @@
 ---
 name: ping
-version: "0.1.0"
-description: Ping a host from multiple locations using ITDOG or other free online ping tools. Returns latency statistics from various ISPs and regions.
+version: "2.0.0"
+description: Multi-mode network diagnostic skill - local ICMP, ITDOG multi-location, TCP ping, and website speed test.
 argument-hint: "<host> [options]"
 allowed-tools: Bash, Read, AskUserQuestion
-homepage: https://github.com/your-username/opencode-ping
-repository: https://github.com/your-username/opencode-ping
-author: your-name
+homepage: https://github.com/citie114514/opencode-ping
+repository: https://github.com/citie114514/opencode-ping
+author: citie114514
 license: MIT
 user-invocable: true
 ---
 
 # /ping
 
-Ping a host (domain or IP) from multiple geographic locations and ISPs to measure network latency and packet loss. This skill uses ITDOG's online ping service (or alternative services) to gather results from diverse monitoring points.
+Multi-mode network diagnostic tool. Tests connectivity from your machine and from 100-300+ monitoring points across China and overseas via ITDOG, plus TCP port connectivity and HTTP/HTTPS speed tests.
 
 ## When to use
 
-- User wants to test network latency to a server from multiple locations.
-- User asks for "ping from different regions" or "multi-location ping test".
-- User provides a hostname or IP address and wants to see response times from various ISPs.
+- "Ping example.com from multiple locations"
+- "从全国各地 Ping 8.8.8.8"
+- "本机 Ping google.com"
+- "测 443 端口" / "TCP ping example.com:443"
+- "测速 https://example.com"
+- User provides a hostname, IP, or URL and wants network diagnostics
 
 ## How to invoke
 
-**Step 1 — parse the user input.** Separate the host (domain or IP) from any options. Example: `/ping example.com --count 10` → host = `example.com`, options = `--count 10`.
+**Step 1 — parse the input.** The skill auto-detects:
+- `example.com` → host for ICMP + TCP 443 + HTTPS
+- `8.8.8.8` → host for ICMP + TCP (no web test unless `--url` given)
+- `example.com:443` → host + port for TCP
+- `https://example.com` → URL for web test, host extracted for ICMP/TCP
 
-**Step 2 — run the ping script.** Pass the host verbatim:
+**Step 2 — run the script:**
 
 ```bash
-python3 "${SKILL_DIR}/scripts/ping.py" "<host>"
+python3 "${SKILL_DIR}/scripts/ping.py" "<host>" [options]
 ```
 
-Optional flags:
-- `--count N` — number of ping packets to send per monitoring point (default: 10).
-- `--timeout T` — timeout in seconds for each ping (default: 5).
-- `--service itdog|pingpe|both` — which online service to use (default: itdog).
-- `--output json|text` — output format (default: text).
+**Default behavior** (`--mode all`):
+1. Local ICMP ping (10 packets)
+2. ITDOG remote ping (all monitoring points)
+3. TCP connect test (port 443 or specified)
+4. HTTPS speed test (if URL or domain)
 
-**Step 3 — read the output.** The script prints a summary of ping results from multiple locations, including:
-- Fastest and slowest response times
-- Average latency
-- Packet loss percentage
-- Results grouped by ISP/region
+**Modes:**
+- `--mode all` (default) — all four tests
+- `--mode local` — local ICMP only
+- `--mode remote` — ITDOG multi-location only
+- `--mode tcp` — TCP connect only
+- `--mode web` — HTTP/HTTPS speed test only
 
-**Step 4 — answer the user.** Present the results in a clear, structured way. Highlight any outliers, high latency, or packet loss. If the user asked a specific question, answer it directly.
+**Options:**
+- `--count N` — ICMP packet count (default: 10)
+- `--timeout T` — timeout in seconds (default: 60)
+- `--port N` — TCP port (default: 443)
+- `--url URL` — explicit URL for web test
+- `--output text|json` — output format
+- `--show-all` — show all ITDOG nodes in text output
+- `--debug` — enable debug output
 
-## How it works
+**Step 3 — read the output.** Text mode shows:
+- Local ICMP summary
+- ITDOG regional summary with per-region stats
+- Abnormal nodes (timeout, loss, high latency)
+- TCP connection result
+- HTTP/HTTPS speed result
 
-1. The script sends a request to ITDOG's ping service (or alternative) with the target host.
-2. ITDOG runs ping tests from its distributed monitoring points across China and globally.
-3. The script parses the HTML response to extract latency data from each monitoring point.
-4. Results are aggregated and formatted for display.
+**Step 4 — answer the user.** Present results clearly. Highlight timeouts, packet loss, and high latency. For JSON mode, pass through the full machine-readable output.
 
-## Supported services
+## ITDOG data flow
 
-- **ITDOG** (itdog.cn) — Chinese service with many monitoring points across China and some international locations.
-- **Ping.pe** — Global service with monitoring points worldwide.
-- **Custom API** — You can add other services by extending the script.
+1. GET `https://www.itdog.cn/ping/{host}` to fetch the results page
+2. Parse the HTML table (`<table id="simpletable">`) to extract all monitoring points
+3. Each row (`<tr class="node_tr">`) contains: location, response IP, loss%, sent count, latency stats
+4. All nodes are collected — no truncation, no artificial limits
+5. No WebSocket or JavaScript execution required
+
+## Region classification
+
+- **华东**: 上海、江苏、浙江、安徽、福建、江西、山东
+- **华北**: 北京、天津、河北、山西、内蒙古
+- **华中**: 湖北、湖南、河南
+- **华南**: 广东、广西、海南
+- **西南**: 四川、重庆、贵州、云南、西藏
+- **西北**: 陕西、甘肃、青海、宁夏、新疆
+- **东北**: 辽宁、吉林、黑龙江
+- **港澳台**: 香港、澳门、台湾
+- **海外**: All non-China locations (Asia, Europe, Americas, etc.)
+
+## Node statuses
+
+- `success` — normal response
+- `partial_loss` — some packets lost (e.g., sent 10, received 7)
+- `timeout` — 100% packet loss (sent 10, received 0)
+- `unavailable` — ITDOG monitoring point itself is down
+- `error` — parsing or other error
 
 ## Dependencies
 
-- Python 3.6+
-- `requests` library
-- `beautifulsoup4` library (for HTML parsing)
-- Optional: `lxml` for faster parsing
-
-Install dependencies:
-```bash
-pip install requests beautifulsoup4 lxml
+```
+requests
+beautifulsoup4
+lxml
+websocket-client
 ```
 
-## Limitations
+Install: `pip install requests beautifulsoup4 lxml websocket-client`
 
-- Some services may have rate limits or require CAPTCHA for frequent requests.
-- Results depend on the availability of the online service.
-- Monitoring point locations are fixed by the service provider.
-- For ITDOG, most monitoring points are in China; international points are limited.
+## Security
 
-## Security & Permissions
-
-**What this skill does:**
-- Sends HTTP requests to third‑party ping services (ITDOG, Ping.pe, etc.) with the target host.
-- Parses HTML responses to extract ping results.
-- Does NOT execute any commands on the target host.
-- Does NOT store or transmit any sensitive data.
-
-**What this skill does NOT do:**
-- Does not perform direct ICMP ping from your machine.
-- Does not access any private networks or internal hosts.
-- Does not require authentication or API keys for basic usage.
-
-## Bundled scripts
-
-- `scripts/ping.py` — Main entry point that orchestrates the ping test.
-- `scripts/services/itdog.py` — ITDOG service adapter.
-- `scripts/services/pingpe.py` — Ping.pe service adapter.
-- `scripts/utils.py` — Shared utilities.
-
-Review scripts before first use to verify behavior.
+- Only performs read-only network tests
+- No credentials, tokens, or sensitive data stored
+- No SSH, no command execution on remote hosts
+- No port scanning (single port only)
+- No CAPTCHA bypass — reports and falls back
