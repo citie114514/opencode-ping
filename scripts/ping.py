@@ -32,28 +32,31 @@ def main():
         sys.exit(1)
 
     results = []
+    region_summary = None
 
     if args.service in ("itdog", "both"):
-        print(f"Querying ITDOG for {host}...", file=sys.stderr)
+        print(f"正在查询 ITDOG: {host}...", file=sys.stderr)
         try:
             itdog_results = itdog.ping(host, count=args.count, timeout=args.timeout)
             results.extend(itdog_results)
+            # 获取区域汇总
+            region_summary = itdog.get_region_summary(itdog_results)
         except Exception as e:
-            print(f"ITDOG error: {e}", file=sys.stderr)
+            print(f"ITDOG 错误: {e}", file=sys.stderr)
 
     if args.service in ("pingpe", "both"):
-        print(f"Querying Ping.pe for {host}...", file=sys.stderr)
+        print(f"正在查询 Ping.pe: {host}...", file=sys.stderr)
         try:
             pingpe_results = pingpe.ping(host, count=args.count, timeout=args.timeout)
             results.extend(pingpe_results)
         except Exception as e:
-            print(f"Ping.pe error: {e}", file=sys.stderr)
+            print(f"Ping.pe 错误: {e}", file=sys.stderr)
 
     if not results:
-        print("No results from any service", file=sys.stderr)
+        print("所有服务均无结果", file=sys.stderr)
         sys.exit(1)
 
-    format_results(results, args.output)
+    format_results(results, args.output, region_summary)
 
 
 if __name__ == "__main__":
