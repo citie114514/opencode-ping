@@ -53,6 +53,14 @@ class TestParseNodeRow:
         assert node.latest_ms == 0.1  # <1ms parsed as 0.1
         assert node.status == NodeStatus.SUCCESS.value
 
+    def test_numeric_latency(self):
+        row = self._make_row([
+            "香港电信", "1.2.3.4", "Anycast/cloudflare.com", "10ms"
+        ])
+        node = _parse_node_row(row, "8.8.8.8")
+        assert node is not None
+        assert node.latest_ms == 10.0
+
     def test_overseas(self):
         row = self._make_row([
             "日本东京", "100.200.300.400", "Anycast/cloudflare.com", "50ms"
