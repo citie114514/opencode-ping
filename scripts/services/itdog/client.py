@@ -36,10 +36,20 @@ def _session() -> requests.Session:
 
 
 def _parse_latency(text: str) -> Optional[float]:
-    """Parse latency value from text like '84ms' or '超时'."""
+    """Parse latency value from text like '84ms' or '<1ms' or '超时'."""
     if not text or text in ("超时", "--", ""):
         return None
-    text = text.replace("ms", "").strip()
+    text = text.strip()
+    
+    # Handle "<1ms" format
+    if text.startswith("<"):
+        try:
+            return float(text[1:].replace("ms", "")) * 0.1  # Return 0.1 for <1ms
+        except ValueError:
+            return 0.1
+    
+    # Remove "ms" suffix
+    text = text.replace("ms", "")
     try:
         return float(text)
     except ValueError:
