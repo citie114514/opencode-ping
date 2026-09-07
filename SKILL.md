@@ -1,7 +1,7 @@
 ---
 name: ping
 version: "2.0.0"
-description: Multi-mode network diagnostic skill - local ICMP, ITDOG multi-location, TCP ping, and website speed test.
+description: Multi-mode network diagnostic skill - local ICMP, ITDOG multi-location, TCP ping, and website speed test. Works with any AI coding assistant (opencode, Claude Code, WorkBuddy, etc.).
 argument-hint: "<host> [options]"
 allowed-tools: Bash, Read, AskUserQuestion
 homepage: https://github.com/citie114514/opencode-ping
@@ -9,6 +9,10 @@ repository: https://github.com/citie114514/opencode-ping
 author: citie114514
 license: MIT
 user-invocable: true
+compatible-tools:
+  - opencode
+  - claude-code
+  - workbuddy
 ---
 
 # /ping
@@ -69,6 +73,21 @@ python3 "${SKILL_DIR}/scripts/ping.py" "<host>" [options]
 
 **Step 4 — answer the user.** Present results clearly. Highlight timeouts, packet loss, and high latency. For JSON mode, pass through the full machine-readable output.
 
+## Installation (any AI assistant)
+
+This skill is **tool-agnostic** — it works with any AI coding assistant that can execute shell commands and read files:
+
+- **opencode** — copy to `~/.config/opencode/skills/ping/`
+- **Claude Code** — copy to `~/.claude/skills/ping/`
+- **WorkBuddy** — copy to the skills directory of your WorkBuddy installation
+- **Others** — copy the `scripts/` directory anywhere and call `python3 ping.py <host>`
+
+```bash
+# Install dependencies
+pip install requests beautifulsoup4 lxml playwright
+playwright install chromium
+```
+
 ## ITDOG data flow
 
 1. Use Playwright headless browser to navigate to `https://www.itdog.cn/ping/{host}`
@@ -106,11 +125,10 @@ python3 "${SKILL_DIR}/scripts/ping.py" "<host>" [options]
 - `beautifulsoup4` library
 - `lxml` for faster parsing
 - `playwright` for headless browser (required for ITDOG)
-- `websocket-client` (optional)
 
 Install dependencies:
 ```bash
-pip install requests beautifulsoup4 lxml playwright websocket-client
+pip install requests beautifulsoup4 lxml playwright
 playwright install chromium
 ```
 

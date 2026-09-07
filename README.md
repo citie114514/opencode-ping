@@ -1,13 +1,15 @@
-# opencode-ping
+# multi-ping
 
-Multi-mode network diagnostic skill for [opencode](https://opencode.ai). Tests connectivity from your machine and from 100-300+ monitoring points across China and overseas via ITDOG, plus TCP port connectivity and HTTP/HTTPS speed tests.
+Multi-mode network diagnostic skill. Tests connectivity from your machine and from 100-300+ monitoring points across China and overseas via ITDOG, plus TCP port connectivity and HTTP/HTTPS speed tests.
+
+**Tool-agnostic** — works with any AI coding assistant that can execute shell commands and read files: opencode, Claude Code, WorkBuddy, Codex, Cursor, and more.
 
 ## Features
 
 | Mode | Description | Method |
 |------|-------------|--------|
 | **Local ICMP** | Ping from your machine | System `ping` command |
-| **ITDOG Remote** | Ping from 100-300+ locations across China & overseas | WebSocket to ITDOG |
+| **ITDOG Remote** | Ping from 100-300+ locations across China & overseas | Playwright headless browser |
 | **TCP Ping** | Measure TCP handshake latency | `socket.create_connection()` |
 | **Website Speed** | HTTP/HTTPS response time, TTFB, redirects | `requests` library |
 
@@ -15,7 +17,8 @@ Multi-mode network diagnostic skill for [opencode](https://opencode.ai). Tests c
 
 ```bash
 # Install dependencies
-pip install requests beautifulsoup4 lxml websocket-client
+pip install requests beautifulsoup4 lxml playwright
+playwright install chromium
 
 # Run all tests
 python3 scripts/ping.py example.com
@@ -35,6 +38,38 @@ python3 scripts/ping.py https://example.com --mode web
 # Show all ITDOG nodes
 python3 scripts/ping.py example.com --show-all
 ```
+
+## Integrate with your AI assistant
+
+This skill is **not tied to any single tool**. Install it wherever you run AI-assisted commands:
+
+### opencode
+
+```bash
+# Copy the whole directory
+cp -r ping/ ~/.config/opencode/skills/
+```
+
+Invoke with `/ping example.com`
+
+### Claude Code
+
+```bash
+# Copy the whole directory
+cp -r ping/ ~/.claude/skills/
+```
+
+Claude Code reads `SKILL.md` as a skill definition. Invoke with `@ping example.com` or naturally.
+
+### WorkBuddy / Cursor / Codex / Others
+
+Copy the `scripts/` directory anywhere and invoke directly:
+
+```bash
+python3 /path/to/ping/scripts/ping.py example.com
+```
+
+Your assistant will read this README or `SKILL.md` for usage instructions.
 
 ## Output Format
 
@@ -155,7 +190,7 @@ python3 scripts/ping.py example.com --output json | python -m json.tool
 - No SSH, no command execution on remote hosts
 - No port scanning (single port only)
 - No CAPTCHA bypass — reports and falls back to alternatives
-- Playwright is only used during development for reverse engineering ITDOG's protocol; the final runtime has zero dependency on Playwright, Chromium, or any browser
+- Playwright runs in headless mode only for ITDOG data fetching
 
 ## Limitations
 
