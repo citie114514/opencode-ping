@@ -67,11 +67,16 @@ AI-assisted commands:
 ### opencode
 
 ```bash
-# Copy the whole directory
+# Copy the whole skill directory
 cp -r ping/ ~/.config/opencode/skills/
+
+# Also install the /ping slash command (shows up when typing / in the TUI)
+mkdir -p ~/.config/opencode/commands
+cp ~/.config/opencode/skills/ping/commands/ping.md ~/.config/opencode/commands/
 ```
 
-Invoke with `/ping example.com`
+- `/ping example.com` — runs the skill straight from the command palette
+- The skill is also advertised to the agent automatically (via `SKILL.md`)
 
 ### Claude Code
 
