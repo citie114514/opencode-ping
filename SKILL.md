@@ -90,10 +90,10 @@ playwright install chromium
 
 ## ITDOG data flow
 
-1. Use Playwright headless browser to navigate to `https://www.itdog.cn/ping/{host}`
-2. Wait for JavaScript to fully load all monitoring point results (up to 294 nodes)
-3. Parse the HTML table (`<table id="simpletable">`) to extract all node data
-4. Extract metadata from JavaScript variables (`check_node_num`, `time_out_num`)
+1. Use the **Playwright CLI** (`playwright cli`, headless) to drive a headless Chromium in a persistent daemon session
+2. Navigate to `https://www.itdog.cn/ping/`, fill in the host, and click the "单次测试" button
+3. Poll `window.check_node_num` / `window.time_out_num` until the table (`tr.node_tr`) is fully rendered (up to ~300 nodes)
+4. Extract every node's location, IP, geo, and latency via a single `eval` call
 5. Return complete results — no truncation, no artificial limits
 
 **Note:** Playwright is used only for ITDOG data fetching. Local ICMP ping, TCP ping, and web tests do not require Playwright.
@@ -124,7 +124,7 @@ playwright install chromium
 - `requests` library
 - `beautifulsoup4` library
 - `lxml` for faster parsing
-- `playwright` for headless browser (required for ITDOG)
+- `playwright` (provides the `playwright cli` headless browser driver, required for ITDOG)
 
 Install dependencies:
 ```bash

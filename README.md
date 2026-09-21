@@ -9,7 +9,7 @@ Multi-mode network diagnostic skill. Tests connectivity from your machine and fr
 | Mode | Description | Method |
 |------|-------------|--------|
 | **Local ICMP** | Ping from your machine | System `ping` command |
-| **ITDOG Remote** | Ping from 100-300+ locations across China & overseas | Playwright headless browser |
+| **ITDOG Remote** | Ping from 100-300+ locations across China & overseas | Playwright CLI (headless) |
 | **TCP Ping** | Measure TCP handshake latency | `socket.create_connection()` |
 | **Website Speed** | HTTP/HTTPS response time, TTFB, redirects | `requests` library |
 
@@ -148,10 +148,10 @@ options:
 
 ## How ITDOG Works
 
-1. Uses Playwright headless browser to navigate to `https://www.itdog.cn/ping/{host}`
-2. Waits for JavaScript to fully load all monitoring point results (up to 294 nodes)
-3. Parses the HTML table (`<table id="simpletable">`) to extract all node data
-4. Extracts metadata from JavaScript variables (`check_node_num`, `time_out_num`)
+1. Uses the **Playwright CLI** (`playwright cli`, headless) to drive a persistent headless Chromium daemon session
+2. Navigates to `https://www.itdog.cn/ping/`, fills in the host, and clicks the "单次测试" button
+3. Polls `window.check_node_num` / `window.time_out_num` until the table (`tr.node_tr`) is fully rendered (up to ~300 nodes)
+4. Extracts every node's location, IP, geo, and latency via a single `eval` call
 5. Returns complete results — no truncation, no artificial limits
 
 **Note:** Playwright is used only for ITDOG data fetching. Local ICMP ping, TCP ping, and web tests do not require Playwright.
