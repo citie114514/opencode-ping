@@ -16,16 +16,24 @@ def _ping_command() -> str:
     return "ping"
 
 
-def _ping_args(target: str, count: int, timeout: int) -> list:
+def _ping_arg_variants(target: str, count: int, timeout: int, ipv6: bool = False) -> list:
+    """Return candidate ping commands, most preferred first."""
     system = platform.system().lower()
     if system == "windows":
+        base = ["ping.exe"]
+        return [base + (["-6"] if ipv6 else []) + ["-n", str(count), "-w", str(timeout * 1000), target]]
+    if ipv6:
+        # iputils ping supports -6; macOS / older systems provide ping6.
         return [
-            "ping.exe", "-n", str(count), "-w", str(timeout * 1000), target
+            ["ping", "-6", "-c", str(count), "-W", str(timeout), target],
+            ["ping6", "-c", str(count), "-W", str(timeout), target],
         ]
-    else:
-        return [
-            "ping", "-c", str(count), "-W", str(timeout), target
-        ]
+    return [["ping", "-c", str(count), "-W", str(timeout), target]]
+
+
+def _ping_args(target: str, count: int, timeout: int, ipv6: bool = False) -> list:
+    """Return the preferred ping command for the current platform."""
+    return _ping_arg_variants(target, count, timeout, ipv6)[0]
 
 
 def _parse_windows_ping(output: str) -> Optional[dict]:
@@ -99,37 +107,54 @@ def _parse_linux_ping(output: str) -> Optional[dict]:
     }
 
 
-def _resolve_host(target: str) -> str:
-    """Try to resolve hostname to IP for display."""
+def _resolve_host(target: str, ipv6: bool = False) -> str:
+    """Try to resolve hostname to an IP for display."""
     import socket
+    family = socket.AF_INET6 if ipv6 else socket.AF_UNSPEC
     try:
-        return socket.gethostbyname(target)
+        infos = socket.getaddrinfo(target, None, family, socket.SOCK_STREAM)
+        return infos[0][4][0]
     except socket.gaierror:
         return target
 
 
-def local_ping(target: str, count: int = 10, timeout: int = 5) -> LocalPingResult:
+def local_ping(target: str, count: int = 10, timeout: int = 5,
+               ipv6: bool = False) -> LocalPingResult:
     """
     Execute a local ICMP ping and return structured result.
+
+    When ``ipv6`` is true the system's dedicated IPv6 ping is used
+    (``ping -6`` on Windows, ``ping -6``/``ping6`` elsewhere).
     """
     result = LocalPingResult(target=target)
 
     try:
-        resolved = _resolve_host(target)
-        result.resolved_ip = resolved
+        result.resolved_ip = _resolve_host(target, ipv6=ipv6)
     except Exception:
         result.resolved_ip = target
 
-    cmd = _ping_args(target, count, timeout)
+    proc = None
+    variants = _ping_arg_variants(target, count, timeout, ipv6)
     try:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout * count + 10,
-            encoding="utf-8",
-            errors="replace",
-        )
+        for cmd in variants:
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout * count + 10,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+                break
+            except FileNotFoundError:
+                proc = None
+                continue
+
+        if proc is None:
+            result.error = "ping command not found"
+            return result
+
         output = proc.stdout + "\n" + proc.stderr
         result.raw_output = output.strip()
 
@@ -149,8 +174,6 @@ def local_ping(target: str, count: int = 10, timeout: int = 5) -> LocalPingResul
         else:
             result.error = "Failed to parse ping output"
 
-    except FileNotFoundError:
-        result.error = "ping command not found"
     except subprocess.TimeoutExpired:
         result.error = "ping command timed out"
     except Exception as e:

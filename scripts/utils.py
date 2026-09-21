@@ -47,6 +47,7 @@ class Mode(str, Enum):
     REMOTE = "remote"
     TCP = "tcp"
     WEB = "web"
+    DNS = "dns"
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +122,8 @@ class TcpPingResult:
     min_ms: Optional[float] = None
     max_ms: Optional[float] = None
     avg_ms: Optional[float] = None
+    resolved_ip: str = ""
+    ipv6: bool = False
 
 
 @dataclass
@@ -140,7 +143,29 @@ class WebTestResult:
     content_type: str = ""
     redirect_count: int = 0
     redirect_url: str = ""
+    resolved_ip: str = ""
+    ipv6: bool = False
+    raw_headers: Dict[str, str] = field(default_factory=dict)
     error: str = ""
+
+
+@dataclass
+class DnsTestResult:
+    """Result of a local DNS resolution test."""
+    host: str = ""
+    rtype: str = "A"
+    server: str = ""
+    # record type -> list of value strings, e.g. {"A": ["1.2.3.4"], "CNAME": ["x.y.com"]}
+    records: Dict[str, List[str]] = field(default_factory=dict)
+    cname_chain: List[str] = field(default_factory=list)
+    resolve_ms: Optional[float] = None
+    ipv6: bool = False
+    error: str = ""
+
+    @property
+    def answers(self) -> List[str]:
+        """Flat list of answers for the queried record type."""
+        return list(self.records.get(self.rtype.upper(), []))
 
 
 @dataclass
@@ -150,12 +175,23 @@ class PingReport:
     started_at: str = ""
     finished_at: str = ""
     duration_seconds: float = 0.0
+    remote_provider: str = ""
     local_ping: Optional[LocalPingResult] = None
     remote_nodes: List[PingNode] = field(default_factory=list)
     tcp_ping: Optional[TcpPingResult] = None
     web_test: Optional[WebTestResult] = None
+    local_dns: Optional[DnsTestResult] = None
+    remote_tcp_nodes: List[PingNode] = field(default_factory=list)
+    remote_web_nodes: List[PingNode] = field(default_factory=list)
+    remote_dns_nodes: List[PingNode] = field(default_factory=list)
     regions: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    tcp_regions: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    web_regions: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    dns_regions: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     summary: Dict[str, Any] = field(default_factory=dict)
+    tcp_summary: Dict[str, Any] = field(default_factory=dict)
+    web_summary: Dict[str, Any] = field(default_factory=dict)
+    dns_summary: Dict[str, Any] = field(default_factory=dict)
     errors: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -202,6 +238,11 @@ def classify_region(text: str) -> str:
     for province, region in data.get("provinces", {}).items():
         if province in text:
             return region
+
+    # Fallback: a Latin-only location string is an overseas node (e.g. ping.pe's
+    # "Chile, Santiago"), even when its country is not in the keyword list.
+    if text and not re.search(r'[\u4e00-\u9fff]', text) and re.search(r'[A-Za-z]', text):
+        return "海外"
 
     return "未知"
 
@@ -257,8 +298,14 @@ def parse_host(raw: str) -> Tuple[str, Optional[int], str]:
     if '/' in host:
         host = host.split('/')[0]
 
-    # Parse port
-    if ':' in host:
+    # Parse port; skip IPv6 literals (more than one colon and not bracketed).
+    if host.startswith('[') and ']' in host:
+        end = host.index(']')
+        port_part = host[end + 1:]
+        host = host[1:end]
+        if port_part.startswith(':') and port_part[1:].isdigit():
+            port = int(port_part[1:])
+    elif ':' in host:
         parts = host.rsplit(':', 1)
         try:
             port = int(parts[1])

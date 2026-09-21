@@ -65,6 +65,15 @@ class TestClassifyRegion:
         assert classify_region("德国法兰克福") == "海外"
         assert classify_region("韩国首尔") == "海外"
 
+    def test_overseas_latin_fallback(self):
+        # ping.pe reports locations as "City, Region, Country"; countries that
+        # are not in the keyword list still classify as overseas.
+        assert classify_region("Chile, Santiago") == "海外"
+        assert classify_region("Puerto Rico, San Juan") == "海外"
+        assert classify_region("Peru, Lima") == "海外"
+        assert classify_region("USA, WA, Seattle") == "海外"
+        assert classify_region("Canada, BC, Vancouver") == "海外"
+
     def test_unknown(self):
         assert classify_region("未知地点") == "未知"
         assert classify_region("") == "未知"

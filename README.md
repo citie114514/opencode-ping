@@ -1,23 +1,34 @@
 # multi-ping
 
-Multi-mode network diagnostic skill. Tests connectivity from your machine and from 100-300+ monitoring points across China and overseas via ITDOG, plus TCP port connectivity and HTTP/HTTPS speed tests.
+Multi-mode network diagnostic skill. Tests connectivity from your machine and from
+100-300+ monitoring points via **ITDOG** (China-focused) or **ping.pe** (global),
+covering ICMP ping, TCP ports, website speed, and DNS resolution — over IPv4 or IPv6.
 
-**Tool-agnostic** — works with any AI coding assistant that can execute shell commands and read files: opencode, Claude Code, WorkBuddy, Codex, Cursor, and more.
+**Tool-agnostic** — works with any AI coding assistant that can execute shell
+commands and read files: opencode, Claude Code, WorkBuddy, Codex, Cursor, and more.
 
 ## Features
 
 | Mode | Description | Method |
 |------|-------------|--------|
-| **Local ICMP** | Ping from your machine | System `ping` command |
-| **ITDOG Remote** | Ping from 100-300+ locations across China & overseas | Playwright CLI (headless) |
-| **TCP Ping** | Measure TCP handshake latency | `socket.create_connection()` |
-| **Website Speed** | HTTP/HTTPS response time, TTFB, redirects | `requests` library |
+| **Local ICMP** | Ping from your machine (IPv4/IPv6) | System `ping` command |
+| **Remote ICMP** | Ping from 100-300+ locations | ITDOG or ping.pe (Playwright CLI, headless) |
+| **TCP Ping** | Measure TCP handshake latency (IPv4/IPv6) | Raw socket connect |
+| **Website Speed** | HTTP/HTTPS response time, DNS/TCP/TLS/TTFB, redirects | `requests` + socket probe |
+| **DNS Resolution** | A/AAAA/CNAME/MX/NS/TXT/SOA/PTR/CAA, CNAME chain | `dnspython` + system resolver fallback |
+
+Remote providers:
+
+| Provider | Coverage | Tools |
+|----------|----------|-------|
+| `itdog` (default) | China-focused, 300+ points | ping / ping_ipv6 / tcping / http / dns |
+| `pingpe` | Global, 160+ points (mostly overseas) | ping / ping6 / tcp / tcp6 / dig |
 
 ## Quick Start
 
 ```bash
 # Install dependencies
-pip install requests beautifulsoup4 lxml playwright
+pip install requests dnspython playwright
 playwright install chromium
 
 # Run all tests
@@ -26,22 +37,32 @@ python3 scripts/ping.py example.com
 # Local ping only
 python3 scripts/ping.py example.com --mode local
 
-# ITDOG remote only, JSON output
+# Remote multi-location only, JSON output
 python3 scripts/ping.py example.com --mode remote --output json
 
-# TCP ping specific port
+# Global multi-location (ping.pe) instead of ITDOG
+python3 scripts/ping.py example.com --mode remote --provider pingpe
+
+# TCP ping specific port (local + remote TCPing)
 python3 scripts/ping.py example.com:443 --mode tcp
 
-# HTTPS speed test
+# HTTPS speed test (local + remote website test)
 python3 scripts/ping.py https://example.com --mode web
 
-# Show all ITDOG nodes
+# DNS resolution test (local + remote)
+python3 scripts/ping.py example.com --mode dns --dns-type MX
+
+# IPv6 (dedicated IPv6 tools)
+python3 scripts/ping.py example.com --mode remote -6
+
+# Show all remote nodes
 python3 scripts/ping.py example.com --show-all
 ```
 
 ## Integrate with your AI assistant
 
-This skill is **not tied to any single tool**. Install it wherever you run AI-assisted commands:
+This skill is **not tied to any single tool**. Install it wherever you run
+AI-assisted commands:
 
 ### opencode
 
@@ -59,7 +80,8 @@ Invoke with `/ping example.com`
 cp -r ping/ ~/.claude/skills/
 ```
 
-Claude Code reads `SKILL.md` as a skill definition. Invoke with `@ping example.com` or naturally.
+Claude Code reads `SKILL.md` as a skill definition. Invoke with `@ping example.com`
+or naturally.
 
 ### WorkBuddy / Cursor / Codex / Others
 
@@ -76,45 +98,60 @@ Your assistant will read this README or `SKILL.md` for usage instructions.
 ### Text Mode (default)
 
 ```
-  / ping example.com
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  / ping www.baidu.com
+  ============================================================
+
+  网络诊断
+  ============================================================
+
   [本机 ICMP]
-    10 发 / 10 收  丢包: 0%
-    平均: 18ms | 最快: 15ms | 最慢: 24ms
+    10 发 / 10 收
+    丢包: 0%
+    平均: 21ms
+    最快: 21ms
+    最慢: 24ms
 
   [ITDOG 多地点]
-    监测点: 200
-    成功: 187  丢包节点: 8  超时: 5
-    平均延迟: 45ms  最快: 2ms  最慢: 286ms
-    整体丢包: 2.3% (1930/2000)
+    监测点: 306   成功: 304   丢包: 0   超时: 2
+    平均: 44ms   最快: <1ms   最慢: 397ms
 
-    区域       节点     成功     丢包     超时     平均延迟
-    ────────────────────────────────────────────────────
-    华东         42       41       1        0       31ms
-    华北         31       28       2        1       48ms
-    华中         22       22       0        0       43ms
-    华南         35       34       1        0       29ms
-    西南         21       19       1        1       57ms
-    西北         14       12       1        1       71ms
-    东北         13       12       0        1       68ms
-    港澳台        8        8       0        0       12ms
-    海外         14       13       1        1      143ms
+    区域
+    华东        68 节点   平均 17ms
+    华北        41 节点   平均 15ms
+    华中        33 节点   平均 24ms
+    华南        27 节点   平均 20ms
+    西南        38 节点   平均 33ms
+    西北        31 节点   平均 36ms
+    东北        26 节点   平均 28ms
+    港澳台       12 节点   平均 41ms
+    海外        27 节点   平均 235ms      超时 2
 
-    异常节点:
-    ⚠ 北京联通             TIMEOUT
-    ⚠ 广州电信             30% LOSS
-    ⚠ 成都移动             TIMEOUT
-    ⚠ 法兰克福 ISP         186ms HIGH LATENCY
+    异常节点
+    ! 海外 德国法兰克福                295ms
+    ! 海外 南非                    TIMEOUT
 
-  [TCP 443]
-    连接成功: 12ms  (尝试 5 次, 成功 5 次)
-    最快: 11ms  最慢: 15ms
+  [本机 TCP 443]
+    连接成功: 29ms
+    最快: 24ms  最慢: 48ms
 
-  [HTTPS 测速]
-    HTTP 200 OK
-    TTFB: 86ms  总耗时: 142ms
-    响应大小: 12.3 KB  Content-Type: text/html
+  [本机 HTTPS 测速]
+    HTTP: 200 OK
+    DNS: <1ms
+    TCP: 25ms
+    TLS: 138ms
+    TTFB: 486ms
+    总耗时: 551ms
+    响应大小: 704.8 KB
+
+  [本机 DNS 解析:A]
+    响应: 2ms
+    - 103.235.46.115
+    - 103.235.46.102
+    CNAME: www.a.shifen.com -> www.wshifen.com
 ```
+
+In `--mode tcp`, `--mode web`, and `--mode dns` the matching remote block is
+appended (e.g. `[ITDOG TCPing]`, `[ITDOG 网站测速]`, `[ITDOG DNS]`).
 
 ### JSON Mode
 
@@ -122,13 +159,15 @@ Your assistant will read this README or `SKILL.md` for usage instructions.
 python3 scripts/ping.py example.com --output json
 ```
 
-Returns complete machine-readable data with all nodes, regions, summaries, and test results.
+Returns complete machine-readable data with all nodes, regions, summaries, and
+test results.
 
 ## CLI Reference
 
 ```
-usage: ping.py [-h] [--mode {all,local,remote,tcp,web}] [--count N]
-               [--timeout T] [--port N] [--url URL]
+usage: ping.py [-h] [--mode {all,local,remote,tcp,web,dns}]
+               [--provider {itdog,pingpe,none}] [--count N] [--timeout T]
+               [--port N] [--url URL] [--dns-type TYPE] [-4 | -6]
                [--output {text,json}] [--show-all] [--debug]
                host
 
@@ -136,25 +175,46 @@ positional arguments:
   host                  Target host, IP, or URL
 
 options:
-  --mode                Test mode: all|local|remote|tcp|web (default: all)
+  --mode                Test mode: all|local|remote|tcp|web|dns (default: all)
+  --provider            Remote provider: itdog|pingpe|none (default: itdog)
   --count N             ICMP packet count (default: 10)
   --timeout T           Timeout in seconds (default: 60)
   --port N              TCP port (default: 443)
   --url URL             Explicit URL for web test
+  --dns-type TYPE       DNS record type: A/AAAA/CNAME/MX/NS/TXT/SOA/PTR/CAA (default: A)
+  -4, --ipv4            Force IPv4 (default)
+  -6, --ipv6            Force IPv6 and use dedicated IPv6 tools
   --output text|json    Output format (default: text)
-  --show-all            Show all ITDOG nodes in text output
+  --show-all            Show all remote nodes in text output
   --debug               Enable debug output
 ```
 
-## How ITDOG Works
+## Mode matrix
 
-1. Uses the **Playwright CLI** (`playwright cli`, headless) to drive a persistent headless Chromium daemon session
-2. Navigates to `https://www.itdog.cn/ping/`, fills in the host, and clicks the "单次测试" button
-3. Polls `window.check_node_num` / `window.time_out_num` until the table (`tr.node_tr`) is fully rendered (up to ~300 nodes)
-4. Extracts every node's location, IP, geo, and latency via a single `eval` call
-5. Returns complete results — no truncation, no artificial limits
+| Mode | Local ICMP | Remote ICMP | Local TCP | Remote TCPing | Local Web | Remote Web | Local DNS | Remote DNS |
+|------|:---------:|:-----------:|:---------:|:-------------:|:---------:|:----------:|:---------:|:----------:|
+| `all` | ✓ | ✓ | ✓ | | ✓ | | ✓ | |
+| `local` | ✓ | | | | | | | |
+| `remote` | | ✓ | | | | | | |
+| `tcp` | | | ✓ | ✓ | | | | |
+| `web` | | | | | ✓ | ✓ | | |
+| `dns` | | | | | | | ✓ | ✓ |
 
-**Note:** Playwright is used only for ITDOG data fetching. Local ICMP ping, TCP ping, and web tests do not require Playwright.
+## How remote testing works
+
+1. Uses the **Playwright CLI** (`playwright cli`, headless) to drive a persistent
+   headless Chromium daemon session.
+2. Navigates to the provider's tool page / command URL.
+3. Submits the subject (fill + click for ITDOG; URL-encoded shortcut for ping.pe).
+4. Polls the DOM until the results table is fully rendered.
+5. Extracts every node's location, IP, geo and latency with a single `eval` call.
+
+**ITDOG** tools share one page framework (`#host` input + result table). **ping.pe**
+maps a command to a subdomain: `ping.pe/HOST`, `ping6.ping.pe/HOST`,
+`tcp.ping.pe/HOST:PORT`, `tcp6.ping.pe/HOST:PORT`, `dig.ping.pe/HOST:TYPE`.
+
+**Note:** Playwright is used only for remote data fetching. Local ICMP ping, TCP
+ping, website test, and DNS test do not require Playwright.
 
 ## Region Classification
 
@@ -179,7 +239,7 @@ pytest tests/ -v
 # Run integration tests (requires network)
 pytest tests/ -m integration -v
 
-# Or run specific integration test
+# Or run a live diagnostic as JSON
 python3 scripts/ping.py example.com --output json | python -m json.tool
 ```
 
@@ -190,15 +250,18 @@ python3 scripts/ping.py example.com --output json | python -m json.tool
 - No SSH, no command execution on remote hosts
 - No port scanning (single port only)
 - No CAPTCHA bypass — reports and falls back to alternatives
-- Playwright runs in headless mode only for ITDOG data fetching
+- Playwright runs in headless mode only for remote data fetching
 
 ## Limitations
 
-- ITDOG monitoring points are mostly in China; international coverage is limited
+- ITDOG monitoring points are mostly in China; ping.pe is mostly overseas
 - ICMP ping timeout does NOT mean HTTP/HTTPS is down (host may block ICMP)
 - TCP 443 success does NOT mean the website is fully functional
 - HTTP failure and ICMP failure should be analyzed separately
-- Website speed test measures from your machine only (not multi-location)
+- Remote providers need ~30-90s to collect results from all nodes
+- IPv6 remote testing requires the target to have an AAAA record (otherwise the
+  provider reports "Unable to resolve")
+- DNS record types beyond A/AAAA require `dnspython`
 
 ## License
 
