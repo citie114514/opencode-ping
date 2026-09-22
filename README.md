@@ -62,13 +62,22 @@ python3 scripts/ping.py example.com --show-all
 ## Integrate with your AI assistant
 
 This skill is **not tied to any single tool**. Install it wherever you run
-AI-assisted commands:
+AI-assisted commands.
+
+> **Keep exactly one checkout. Never run several copies.**
+> Assistants resolve a skill *name* against multiple directories at once, so if a
+> second copy exists it can win the lookup and silently serve an outdated
+> `SKILL.md`. Clone or check out this repository **once**, then point every tool
+> at that single directory with a link.
 
 ### opencode
 
 ```bash
-# Copy the whole directory
-cp -r ping/ ~/.config/opencode/skills/
+# Windows (no admin required)
+New-Item -ItemType Junction -Path "$env:USERPROFILE\.config\opencode\skills\ping" -Target "C:\path\to\multi-ping"
+
+# macOS / Linux
+ln -s /path/to/multi-ping ~/.config/opencode/skills/ping
 ```
 
 Invoke with `/ping example.com`
@@ -76,8 +85,11 @@ Invoke with `/ping example.com`
 ### Claude Code
 
 ```bash
-# Copy the whole directory
-cp -r ping/ ~/.claude/skills/
+# Windows (no admin required)
+New-Item -ItemType Junction -Path "$env:USERPROFILE\.claude\skills\ping" -Target "C:\path\to\multi-ping"
+
+# macOS / Linux
+ln -s /path/to/multi-ping ~/.claude/skills/ping
 ```
 
 Claude Code reads `SKILL.md` as a skill definition. Invoke with `@ping example.com`
@@ -85,13 +97,18 @@ or naturally.
 
 ### WorkBuddy / Cursor / Codex / Others
 
-Copy the `scripts/` directory anywhere and invoke directly:
+Link or copy the `scripts/` directory anywhere and invoke directly:
 
 ```bash
 python3 /path/to/ping/scripts/ping.py example.com
 ```
 
 Your assistant will read this README or `SKILL.md` for usage instructions.
+
+If your tool does not support links, copy **once** from the newest checkout and
+re-copy after every update — never edit a copy in place. To check which copy is
+actually loaded, run `opencode debug skill` and compare the reported
+`location`.
 
 ## Output Format
 
