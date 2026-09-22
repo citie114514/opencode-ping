@@ -44,6 +44,13 @@ ping, TCP ping, website speed, DNS resolution) **and from 100-300+ monitoring po
 python3 "${SKILL_DIR}/scripts/ping.py" "<host>" [options]
 ```
 
+**Python interpreter:** every `python3 ...` command in this skill is for macOS/Linux.
+On **Windows**, substitute `python` — the `python3` command on Windows is usually the
+Microsoft Store stub and will not run the script. `SKILL_DIR` is the absolute path of
+the directory containing this `SKILL.md` (the scripts are its direct sibling at
+`SKILL_DIR/scripts/ping.py`), so set it from the path your harness reported when the
+file was read.
+
 **Default behavior** (`--mode all`):
 1. Local ICMP ping (10 packets)
 2. Remote multi-location ICMP ping (ITDOG by default)
@@ -98,6 +105,8 @@ python3 scripts/ping.py example.com --mode dns --dns-type AAAA -6          # IPv
 python3 scripts/ping.py example.com --mode remote -6                       # dedicated IPv6 tools
 python3 scripts/ping.py example.com --provider none -c 5                   # local only
 ```
+
+On **Windows**, replace `python3` with `python` in every example above.
 
 **Step 3 — read the output.** The script prints structured summaries:
 - **Local ICMP** — packets sent / received, packet loss, avg / min / max latency
