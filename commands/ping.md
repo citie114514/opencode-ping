@@ -1,5 +1,5 @@
 ---
-description: 多模式网络诊断 - 本机/全球多地点 ICMP、TCP ping、网页测速、DNS 解析、IPv4/IPv6（ITDOG + ping.pe）
+description: Multi-mode network diagnostic skill - local ICMP, TCP ping (tcpping), website speed test, DNS resolution, IPv4/IPv6, plus remote multi-location testing via ITDOG and ping.pe.
 ---
 
 使用 **ping** skill 执行网络诊断。目标主机与参数：$ARGUMENTS

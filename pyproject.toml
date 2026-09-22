@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "multi-ping"
-version = "2.1.0"
+version = "2.2.0"
 description = "Multi-mode network diagnostic skill compatible with any AI coding assistant (opencode, Claude Code, WorkBuddy, etc.)"
 readme = "README.md"
 license = {text = "MIT"}
