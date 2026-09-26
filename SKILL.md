@@ -1,6 +1,6 @@
 ---
 name: ping
-version: "2.2.0"
+version: "2.3.0"
 description: Multi-mode network diagnostic skill - local ICMP, TCP ping (tcpping), website speed test, DNS resolution, IPv4/IPv6, plus remote multi-location testing from 100-300+ monitoring points via ITDOG and ping.pe. Works with any AI coding assistant (opencode, Claude Code, WorkBuddy, etc.).
 argument-hint: "<host> [options]"
 allowed-tools: Bash, Read, AskUserQuestion
@@ -70,15 +70,45 @@ file was read.
 
 | Provider | Coverage | Tools |
 |----------|----------|-------|
-| `itdog` (default) | China-focused, 300+ points | ping / ping_ipv6 / tcping / http / dns |
+| `itdog` (default) | China-focused, 300+ points | ping / ping_ipv6 / tcping / tcping_ipv6 / http / dns |
 | `pingpe` | Global, 160+ points (mostly overseas) | ping / ping6 / tcp / tcp6 / dig |
 | `none` | — | skip remote testing (local only) |
 
 Note: `ping.pe` has no website speed tool; use `--provider itdog` for `--mode web`.
 
 **IPv6** (`-6` / `--ipv6`): forces every test over IPv6 and uses each provider's
-dedicated IPv6 tools — ITDOG `/ping_ipv6/`, `ping6.ping.pe`, `tcp6.ping.pe`. The target
-must have an AAAA record for remote IPv6 tests.
+dedicated IPv6 tools — ITDOG `/ping_ipv6/` and `/tcping_ipv6/`, `ping6.ping.pe`,
+`tcp6.ping.pe`. The target must have an AAAA record for remote IPv6 tests, or be given
+as a bare IPv6 literal.
+
+**Interpreting IPv6 results — always run a control.** When an IPv6 target shows
+(widespread) timeouts, first prove the probe itself works by testing a known-good IPv6
+host from the same provider, e.g.:
+
+```bash
+python scripts/ping.py www.qq.com --mode tcp --port 443 -6 --provider itdog
+```
+
+If the control succeeds broadly (200+ nodes) while the target fails, the target really is
+unreachable. Without the control you cannot distinguish "target blocked" from "monitoring
+nodes have no IPv6" or "the tool silently fell back to IPv4".
+
+Also note: a small number of nodes (typically 2-5, often 港澳台/海外) report **sub-5 ms
+latencies over long distances**, which is physically impossible — treat those as false
+positives, not successes. Compare **ICMPv6 vs TCP** on the same address to tell a
+filtered port apart from a fully blocked host.
+
+**Windows / `playwright-cli` environments:** the remote adapters shell out to
+`<PLAYWRIGHT_CLI> cli <subcommand>`. If your environment only has the npm
+`playwright-cli` (which takes subcommands directly, with no `cli` layer), set:
+
+```bash
+export PLAYWRIGHT_CLI="C:/Users/<you>/AppData/Roaming/npm/playwright-cli.cmd"
+export PLAYWRIGHT_CLI_SUBCMD=""
+```
+
+Point `PLAYWRIGHT_CLI` at the **`.cmd`** shim, not the extension-less shell script —
+`subprocess` cannot launch the latter on Windows.
 
 **Options:**
 - `--count N` — number of ICMP packets (default: 10)
@@ -102,7 +132,9 @@ python3 scripts/ping.py example.com --mode tcp --port 443                  # loc
 python3 scripts/ping.py https://example.com --mode web                     # local + remote speed test
 python3 scripts/ping.py example.com --mode dns --dns-type MX               # DNS MX records
 python3 scripts/ping.py example.com --mode dns --dns-type AAAA -6          # IPv6 DNS lookup
-python3 scripts/ping.py example.com --mode remote -6                       # dedicated IPv6 tools
+python3 scripts/ping.py example.com --mode remote -6                       # dedicated IPv6 ICMP
+python3 scripts/ping.py 2606:4700::6811:dfe3 --mode tcp --port 443 -6      # IPv6 TCPing (ITDOG)
+python3 scripts/ping.py 2408:8248:e30:bc4::1 --mode tcp --port 22 -6       # IPv6 literal + port
 python3 scripts/ping.py example.com --provider none -c 5                   # local only
 ```
 
@@ -136,7 +168,8 @@ machine-readable output.
 ## Supported services
 
 - **ITDOG** (itdog.cn) — Chinese service with 300+ monitoring points across China and
-  some international locations. Tools: ping, IPv6 ping, TCPing, HTTP speed, DNS lookup.
+  some international locations. Tools: ping, IPv6 ping, TCPing (IPv4 + IPv6), HTTP speed,
+  DNS lookup.
 - **Ping.pe** — global service with 160+ monitoring points worldwide (mostly overseas).
   Tools: ping, ping6, TCP, TCP6, dig.
 
@@ -192,7 +225,7 @@ playwright install chromium
 - `scripts/dns_test.py` — local DNS resolution (`dnspython` + system fallback)
 - `scripts/utils.py` — shared data models, host/URL parsing, region classification
 - `scripts/services/browser.py` — shared Playwright CLI wrapper for remote providers
-- `scripts/services/itdog/client.py` — ITDOG adapter (ping / ping_ipv6 / tcping / http / dns)
+- `scripts/services/itdog/client.py` — ITDOG adapter (ping / ping_ipv6 / tcping / tcping_ipv6 / http / dns)
 - `scripts/services/pingpe/client.py` — ping.pe adapter (ping / ping6 / tcp / tcp6 / dig)
 
 Review scripts before first use to verify behavior.

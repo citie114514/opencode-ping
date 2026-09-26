@@ -7,11 +7,12 @@ call against a persistent daemon session, so a fresh browser is opened for
 each test, driven through the ITDOG form flow, then closed.
 
 Supported ITDOG tools (all share the same page framework):
-    * ping       -> /ping/        ICMP ping (IPv4)
-    * ping_ipv6  -> /ping_ipv6/   dedicated IPv6 ICMP ping tool
-    * tcping     -> /tcping/      multi-location TCP port test
-    * http       -> /http/        multi-location website speed test
-    * dns        -> /dns/         multi-location DNS lookup
+    * ping        -> /ping/           ICMP ping (IPv4)
+    * ping_ipv6   -> /ping_ipv6/      dedicated IPv6 ICMP ping tool
+    * tcping      -> /tcping/         multi-location TCP port test (IPv4)
+    * tcping_ipv6 -> /tcping_ipv6/    multi-location TCP port test (IPv6)
+    * http        -> /http/           multi-location website speed test
+    * dns         -> /dns/            multi-location DNS lookup
 """
 
 import os
@@ -38,6 +39,7 @@ TOOLS = {
     "ping": ("/ping/", "单次测试"),
     "ping6": ("/ping_ipv6/", "单次测试"),
     "tcping": ("/tcping/", "单次测试"),
+    "tcping6": ("/tcping_ipv6/", "单次测试"),
     "http": ("/http/", "快速测试"),
     "dns": ("/dns/", "开始测试"),
 }
@@ -207,6 +209,7 @@ _PARSERS = {
     "ping": lambda rows, host: _parse_ping_rows(rows, host, ipv6=False),
     "ping6": lambda rows, host: _parse_ping_rows(rows, host, ipv6=True),
     "tcping": lambda rows, host: _parse_ping_rows(rows, host, ipv6=False),
+    "tcping6": lambda rows, host: _parse_ping_rows(rows, host, ipv6=True),
     "http": _parse_http_rows,
     "dns": _parse_dns_rows,
 }
@@ -308,6 +311,17 @@ def tcping(host, port=80, count=10, timeout=DEFAULT_TIMEOUT):
     """Multi-location TCP port test via ITDOG /tcping/."""
     target = f"{host_for_url(host)}:{port}" if port else host
     return _run_tool("tcping", target, timeout=timeout)
+
+
+def tcping_ipv6(host, port=80, count=10, timeout=DEFAULT_TIMEOUT):
+    """Multi-location IPv6 TCP port test via ITDOG /tcping_ipv6/.
+
+    `host` may be a bare IPv6 literal (bracketed automatically) or a name with
+    an AAAA record. The port defaults to 80 on ITDOG's side when omitted, so it
+    is always appended here.
+    """
+    target = f"{host_for_url(host)}:{port}" if port else host
+    return _run_tool("tcping6", target, timeout=timeout)
 
 
 def http(host, timeout=DEFAULT_TIMEOUT):

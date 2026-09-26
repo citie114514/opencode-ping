@@ -77,6 +77,8 @@ def run_remote(tool: str, host: str, provider: str, port: int = None,
             if tool == "ping":
                 return svc.ping_ipv6(host, timeout=timeout) if ipv6 else svc.ping(host, timeout=timeout)
             if tool == "tcp":
+                if ipv6:
+                    return svc.tcping_ipv6(host, port=port or 80, timeout=timeout)
                 return svc.tcping(host, port=port or 80, timeout=timeout)
             if tool == "web":
                 return svc.http(host, timeout=timeout)

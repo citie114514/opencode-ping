@@ -11,6 +11,11 @@ import os
 import subprocess
 
 PLAYWRIGHT_CLI = os.environ.get("PLAYWRIGHT_CLI", "playwright")
+# Some environments only ship the npm `playwright-cli` binary, where subcommands
+# follow the executable directly with no `cli` layer. Set PLAYWRIGHT_CLI_SUBCMD=""
+# to omit that layer, e.g.
+#   PLAYWRIGHT_CLI=playwright-cli PLAYWRIGHT_CLI_SUBCMD= python scripts/ping.py ...
+PLAYWRIGHT_CLI_SUBCMD = os.environ.get("PLAYWRIGHT_CLI_SUBCMD", "cli")
 
 
 class BrowserError(Exception):
@@ -19,7 +24,10 @@ class BrowserError(Exception):
 
 def run_cli(args, timeout=180):
     """Run a `playwright cli` subcommand and return its raw stdout."""
-    cmd = [PLAYWRIGHT_CLI, "cli"] + list(args)
+    cmd = [PLAYWRIGHT_CLI]
+    if PLAYWRIGHT_CLI_SUBCMD:
+        cmd.append(PLAYWRIGHT_CLI_SUBCMD)
+    cmd += list(args)
     proc = subprocess.run(
         cmd,
         capture_output=True,
